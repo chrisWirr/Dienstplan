@@ -1,4 +1,4 @@
-        import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Upload, Calendar, Clock, Loader2, AlertCircle } from 'lucide-react';
@@ -18,6 +18,7 @@ interface ParsedSchedule {
 }
 
 export default function ShiftScheduleParser() {
+  const [employeeName, setEmployeeName] = useState<string>('');
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [schedule, setSchedule] = useState<ParsedSchedule | null>(null);
@@ -56,18 +57,25 @@ export default function ShiftScheduleParser() {
     try {
       const base64PDF = await convertFileToBase64(file);
 
-      const systemPrompt = `You are a shift schedule extraction assistant. Analyze the provided PDF document and extract shift information for the user.
+      const systemPrompt = `You are a shift schedule extraction assistant. Analyze the provided PDF document and extract shift information ONLY for the employee named "${employeeName}".
 
-Instructions:
-1. Extract all shift entries with dates, times, and any relevant details
-2. Calculate and add the weekday name for each date (Monday, Tuesday, Wednesday, etc.)
-3. Organize shifts chronologically by date
-4. Include shift start time, end time, and duration if available
-5. Extract any notes or special information about shifts
+CRITICAL INSTRUCTIONS:
+1. Search ONLY for shifts belonging to "${employeeName}" (case-insensitive, partial matches allowed)
+2. IGNORE all other employees' schedules
+3. Extract dates in YYYY-MM-DD format
+4. Calculate and add the weekday name for each date (Monday, Tuesday, Wednesday, etc.)
+5. Recognize various time formats:
+   - "08:00-16:00" or "08:00 - 16:00"
+   - "8-16" or "8:00-16:00"
+   - "0800-1600"
+   - Time ranges with breaks: "08:00-12:00, 13:00-17:00"
+6. Calculate total work duration if possible
+7. Extract any notes, locations, or special remarks
+8. Organize shifts chronologically by date
 
 Return the data in the following JSON format:
 {
-  "employeeName": "Name if found in document",
+  "employeeName": "${employeeName}",
   "shifts": [
     {
       "date": "YYYY-MM-DD",
@@ -75,12 +83,19 @@ Return the data in the following JSON format:
       "startTime": "HH:MM",
       "endTime": "HH:MM",
       "duration": "X hours",
-      "notes": "Any special notes"
+      "notes": "Any special notes, location, or break information"
     }
   ]
 }
 
-Be thorough and extract all shift information from the document, even if it spans multiple pages.`;
+If no shifts are found for "${employeeName}", return:
+{
+  "employeeName": "${employeeName}",
+  "shifts": [],
+  "error": "No shifts found for this employee"
+}
+
+Be thorough and check all pages of the document.`;
 
       const response = await fetch('https://llm.blackbox.ai/chat/completions', {
         method: 'POST',
@@ -101,7 +116,7 @@ Be thorough and extract all shift information from the document, even if it span
               content: [
                 {
                   type: 'text',
-                  text: 'Please extract and organize all shift information from this PDF document. Make sure to include the weekday for each date.'
+                  text: `Please extract and organize ONLY the shift information for the employee "${employeeName}" from this PDF document. Make sure to include the weekday for each date. Ignore all other employees.`
                 },
                 {
                   type: 'file',
@@ -132,7 +147,12 @@ Be thorough and extract all shift information from the document, even if it span
       const jsonString = jsonMatch ? jsonMatch[1].trim() : content.trim();
       const parsedSchedule: ParsedSchedule = JSON.parse(jsonString);
 
-      setSchedule(parsedSchedule);
+      if (parsedSchedule.shifts.length === 0) {
+        setError(`Keine Schichten für "${employeeName}" gefunden. Bitte überprüfe den Namen und versuche es erneut.`);
+        setSchedule(null);
+      } else {
+        setSchedule(parsedSchedule);
+      }
     } catch (err) {
       console.error('Error parsing schedule:', err);
       setError(err instanceof Error ? err.message : 'Failed to parse PDF. Please try again.');
@@ -144,7 +164,7 @@ Be thorough and extract all shift information from the document, even if it span
   const formatDate = (dateString: string) => {
     try {
       const date = new Date(dateString);
-      return date.toLocaleDateString('en-US', { 
+      return date.toLocaleDateString('de-DE', { 
         year: 'numeric', 
         month: 'long', 
         day: 'numeric' 
@@ -168,15 +188,29 @@ Be thorough and extract all shift information from the document, even if it span
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Upload className="w-5 h-5" />
-              Upload Schedule PDF
+              Mitarbeiter & PDF hochladen
             </CardTitle>
             <CardDescription>
-              Select a PDF file containing shift schedules to extract and organize
+              Gib deinen Namen ein und wähle die PDF-Datei mit den Schichtplänen
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-col gap-4">
-              <div className="flex items-center gap-4">
+              <div className="space-y-2">
+                <label htmlFor="employee-name" className="text-sm font-medium text-foreground">
+                  Mitarbeitername
+                </label>
+                <input
+                  id="employee-name"
+                  type="text"
+                  value={employeeName}
+                  onChange={(e) => setEmployeeName(e.target.value)}
+                  placeholder="z.B. Max Mustermann"
+                  className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                />
+              </div>
+
+              <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
                 <input
                   type="file"
                   accept="application/pdf"
@@ -185,16 +219,16 @@ Be thorough and extract all shift information from the document, even if it span
                 />
                 <Button
                   onClick={parseSchedule}
-                  disabled={!file || loading}
+                  disabled={!file || !employeeName.trim() || loading}
                   className="min-w-[120px]"
                 >
                   {loading ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Parsing...
+                      Analysiere...
                     </>
                   ) : (
-                    'Parse Schedule'
+                    'Schichten extrahieren'
                   )}
                 </Button>
               </div>
@@ -220,10 +254,10 @@ Be thorough and extract all shift information from the document, even if it span
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Calendar className="w-5 h-5" />
-                Your Shift Schedule
+                Deine Schichten
               </CardTitle>
               {schedule.employeeName && (
-                <CardDescription>Schedule for {schedule.employeeName}</CardDescription>
+                <CardDescription>Schichtplan für {schedule.employeeName}</CardDescription>
               )}
             </CardHeader>
             <CardContent>
@@ -275,7 +309,7 @@ Be thorough and extract all shift information from the document, even if it span
               <div className="flex flex-col items-center justify-center space-y-4">
                 <Loader2 className="w-12 h-12 animate-spin text-primary" />
                 <p className="text-muted-foreground">
-                  Analyzing your PDF and extracting shift information...
+                  Analysiere PDF und extrahiere Schichten für {employeeName}...
                 </p>
               </div>
             </CardContent>
