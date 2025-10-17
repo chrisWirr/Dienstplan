@@ -159,4 +159,4 @@ Be thorough and check all pages of the document.`;
         throw new Error('No response from AI');
       }
 
-      const jsonMatch = content.match(/
+      const jsonMatch = content.match(/ 
