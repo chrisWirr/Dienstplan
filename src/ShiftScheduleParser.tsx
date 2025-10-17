@@ -127,22 +127,7 @@ Be thorough and check all pages of the document.`;
               role: 'system',
               content: systemPrompt
             },
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'text',
-                  text: `Bitte extrahiere und organisiere NUR die Schichtinformationen für den Mitarbeiter "${employeeName}" aus diesem PDF-Dokument. Beachte auch freie Tage, Urlaub (J), Krankheit (/) und andere Abwesenheitsarten. Ignoriere alle anderen Mitarbeiter.`
-                },
-                {
-                  type: 'file',
-                  file: {
-                    filename: file.name,
-                    file_data: base64PDF
-                  }
-                }
-              ]
-            }
+            { role: 'user', content: [ { type: 'text', text: Bitte extrahiere und organisiere NUR die Schichtinformationen für den Mitarbeiter "${employeeName}" aus diesem PDF-Dokument. Beachte auch freie Tage, Urlaub (J), Krankheit usw. }, { type: 'file', file: { filename: file.name, file_data: base64PDF } } ] }
           ]
         }),
         signal: AbortSignal.timeout(300000)
